@@ -1,15 +1,15 @@
 [project]
 name = "vgi-prefect-worker"
 version = "0.1.0"
-description = "A VGI worker for DuckDB, generated from the Query.Farm VGI starter template."
+description = "Prefect 3 (Cloud and self-hosted) flows, runs, logs and deployments as SQL tables in DuckDB, via VGI."
 readme = "README.md"
-license = "MIT-0"
+license = "0BSD"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     # [http] adds the HTTP transport (`--http`) used by Docker deploys.
     # SDK bumps go through the template (minor bumps can raise the protocol).
-    "vgi-python[http]>=0.51.1,<0.52",
+    "vgi-python[http,haybarn]>=0.51.1,<0.52",
 ]
 
 [project.scripts]
