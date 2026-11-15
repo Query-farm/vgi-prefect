@@ -20,8 +20,8 @@ from .meta import object_tags
 from .unified import unified_status
 
 _STATE_DOC = (
-    "A Prefect StateType such as COMPLETED, FAILED, CRASHED, RUNNING or SCHEDULED (case-insensitive). "
-    "NULL or an unknown type maps to queued."
+    "A Prefect state type as found in flow_runs.state_type or task_runs.state_type (case-insensitive). "
+    "NULL or an unrecognised type maps to queued."
 )
 
 

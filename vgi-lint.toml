@@ -7,7 +7,7 @@
 location = ".venv/bin/vgi-prefect-worker"
 
 # Fail on warnings while you build. Raise this to "info" before you publish the worker.
-fail_on = "warning"
+fail_on = "info"
 
 # Waive a finding only with a kind and a reason, so the waiver can be audited:
 #   domain-exemption  permanent and legitimate for this worker
@@ -17,6 +17,24 @@ fail_on = "warning"
 ignore = [
   # { code = "VGI146", kind = "domain-exemption", reason = "every entry point needs a key" },
 ]
+
+# VGI808 guesses a foreign key from a `<base>_id` column name. Every reference Prefect's own
+# database enforces is declared (deployments/flow_runs->flows, flow_runs->deployments,
+# task_runs->flow_runs, deployment_schedules->deployments, work_queues/workers->work_pools,
+# block_documents->block_types, unified.task_runs->unified.runs). The rest:
+[per_object."prefect.unified.runs"]
+ignore = [{ code = "VGI808", kind = "tooling-bug", reason = "run_id is this table's own primary key" }]
+[per_object."prefect.unified.task_runs"]
+ignore = [{ code = "VGI808", kind = "tooling-bug", reason = "task_run_id is this table's own primary key; its run_id FK to runs is declared" }]
+# Logs and artifacts carry run ids without a database foreign key in Prefect: log lines are
+# shipped asynchronously (they can arrive before the run row, and outlive a deleted run), so a
+# foreign key could not be attested ENFORCED.
+[per_object."prefect.main.flow_run_logs"]
+ignore = [{ code = "VGI808", kind = "domain-exemption", reason = "Prefect logs have no FK to flow_runs; lines can outlive a deleted run" }]
+[per_object."prefect.main.task_run_logs"]
+ignore = [{ code = "VGI808", kind = "domain-exemption", reason = "Prefect logs have no FK to runs; lines can outlive a deleted run" }]
+[per_object."prefect.main.artifacts"]
+ignore = [{ code = "VGI808", kind = "domain-exemption", reason = "Prefect artifacts reference runs without a database FK and can outlive them" }]
 
 # Adopting the gate on a worker that already has findings? Record them once with
 #   vgi-lint lint --baseline vgi-lint-baseline --update-baseline

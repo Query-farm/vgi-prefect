@@ -179,7 +179,7 @@ warehouse-connections	global	NULL	4
 # ---------------------------------------------------------------- automations / events
 
 query TTTT
-SELECT name, enabled, trigger_type, trigger->>'$.posture' FROM prefect.main.automations;
+SELECT name, enabled, trigger_type, trigger_definition->>'$.posture' FROM prefect.main.automations;
 ----
 notify-on-failure	true	event	Reactive
 

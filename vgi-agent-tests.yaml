@@ -1,16 +1,75 @@
 # Private graders for the public vgi.agent_test_tasks in the worker's catalog metadata.
-# `vgi-lint lint --ai` runs an agent on each prompt and grades it with check_sql.
+# `vgi-lint lint --ai` runs an agent on each prompt and grades it against reference_sql.
 # See https://github.com/Query-farm/vgi-lint-check (VGI920).
+#
+# Credential-gated: every task but normalize_state needs a `prefect` secret. The data is the
+# recorded fixture server (test/fixtures/prefect3.json replayed by test/mock_api/server.py),
+# which never changes, so reference results are deterministic. Run --ai with
+#   CREATE SECRET (TYPE prefect, API_URL '<replay url>/api', AUTH_STRING 'admin:prefect-fixture-pw');
 tasks:
-  - name: formal_greeting
-    reference_sql: SELECT prefect.main.greet('Grace', 'formal') AS greeting
-  - name: sum_of_squares
-    reference_sql: SELECT sum(squared) AS total FROM prefect.main.sequence_table(10)
-  - name: stepped_sequence
-    reference_sql: SELECT n FROM prefect.main.sequence_table(4, step := 5) ORDER BY n
-  # Reads the public demo API (https://vgi-starter-api.query-farm.services/v1).
-  - name: items_per_category
-    check_sql: >-
-      SELECT count(*) = 3 AND sum(items) = 25
-      FROM (SELECT category, count(*) AS items
-            FROM prefect.main.fetch_items('https://vgi-starter-api.query-farm.services/v1') GROUP BY category)
+  - name: failed_runs
+    reference_sql: >-
+      SELECT flow_name, name FROM prefect.main.flow_runs WHERE state_type IN ('FAILED', 'CRASHED') ORDER BY ALL
+    unordered: true
+  - name: retried_task
+    reference_sql: SELECT name, run_count FROM prefect.main.task_runs WHERE run_count > 1
+  - name: runs_per_status
+    reference_sql: SELECT status, count(*) AS runs FROM prefect.unified.runs GROUP BY status ORDER BY status
+    unordered: true
+  - name: etl_runs
+    reference_sql: SELECT count(*) AS runs FROM prefect.main.flow_runs WHERE list_contains(tags, 'etl')
+  - name: validation_error
+    reference_sql: >-
+      SELECT l.message FROM prefect.main.task_run_logs l JOIN prefect.main.task_runs t ON l.task_run_id = t.id
+      JOIN prefect.main.flow_runs r ON t.flow_run_id = r.id
+      WHERE r.flow_name = 'broken-import' AND t.name LIKE 'validate%' AND l.level_name = 'error'
+      ORDER BY l.timestamp LIMIT 1
+  - name: deployment_schedule
+    reference_sql: >-
+      SELECT cron, timezone FROM prefect.main.deployment_schedules WHERE deployment_name = 'nightly'
+  - name: scheduled_runs
+    reference_sql: >-
+      SELECT count(*) AS runs FROM prefect.main.flow_runs WHERE deployment_name = 'nightly' AND state_type = 'SCHEDULED'
+  - name: artifact_keys
+    reference_sql: >-
+      SELECT key, count(*) AS versions FROM prefect.main.artifacts WHERE key IS NOT NULL GROUP BY key ORDER BY key
+    unordered: true
+  - name: safe_variables
+    reference_sql: >-
+      SELECT name, value FROM prefect.main.variable_values(reveal := true) WHERE NOT is_masked ORDER BY name
+    unordered: true
+  - name: failure_events
+    reference_sql: SELECT count(*) AS events FROM prefect.main.events WHERE event = 'prefect.flow-run.Failed'
+  - name: deployed_flows
+    reference_sql: >-
+      SELECT f.name AS flow, d.name AS deployment, d.work_pool_name
+      FROM prefect.main.deployments d JOIN prefect.main.flows f ON d.flow_id = f.id ORDER BY ALL
+    unordered: true
+  - name: pool_inventory
+    reference_sql: >-
+      SELECT p.name, p.type,
+        (SELECT count(*) FROM prefect.main.work_queues q WHERE q.work_pool_id = p.id) AS queues,
+        (SELECT count(*) FROM prefect.main.workers w WHERE w.work_pool_id = p.id) AS workers
+      FROM prefect.main.work_pools p ORDER BY p.name
+    unordered: true
+  - name: flow_level_errors
+    reference_sql: SELECT count(*) AS errors FROM prefect.main.flow_run_logs WHERE level_name = 'error'
+  - name: block_inventory
+    reference_sql: >-
+      SELECT b.name, t.name AS block_type FROM prefect.main.block_documents b
+      JOIN prefect.main.block_types t ON b.block_type_id = t.id ORDER BY b.name
+    unordered: true
+  - name: concurrency_caps
+    reference_sql: SELECT name, "limit" FROM prefect.main.concurrency_limits ORDER BY name
+    unordered: true
+  - name: enabled_automations
+    reference_sql: SELECT name FROM prefect.main.automations WHERE enabled ORDER BY name
+  - name: secret_tagged_variables
+    reference_sql: SELECT name FROM prefect.main.variables WHERE list_contains(tags, 'secret') ORDER BY name
+  - name: unified_task_status
+    reference_sql: >-
+      SELECT t.status, count(*) AS task_runs FROM prefect.unified.task_runs t
+      JOIN prefect.unified.runs r USING (run_id) WHERE r.pipeline = 'etl-orders' GROUP BY t.status ORDER BY t.status
+    unordered: true
+  - name: normalize_state
+    reference_sql: SELECT prefect.unified.unified_status('CRASHED') AS status

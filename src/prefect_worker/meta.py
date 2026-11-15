@@ -201,7 +201,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "flow_name and deployment_name are looked up. Pushed down: id, name, flow_id, flow_name, deployment_id, "
         "deployment_name, work_pool_name, work_queue_name, state_type, state_name (= or IN), "
         "list_contains(tags, 'x'), and start_time, end_time, expected_start_time ranges. total_run_time is in "
-        "seconds. parameters is JSON.",
+        "seconds. parameters is JSON. Join flows ON flow_runs.flow_id = flows.id, deployments ON "
+        "flow_runs.deployment_id = deployments.id, task_runs ON task_runs.flow_run_id = flow_runs.id.",
         "Run history for every flow. Filter by `flow_name`, `state_type` and a time range to keep reads small.",
     ),
     "task_runs": _doc(
@@ -209,7 +210,7 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Task Run History",
         "runs",
         "task run, tasks, task state, retries, failed tasks, duration, cache",
-        "One row per task run, keyed by id. run_count counts attempts (2 = one retry); max_retries is the "
+        "One row per task run, keyed by id (join flow_runs ON task_runs.flow_run_id = flow_runs.id). run_count counts attempts (2 = one retry); max_retries is the "
         "configured retry budget. Pushed down: id, name, flow_run_id (= or IN), state_type, state_name, "
         "list_contains(tags, 'x'), start_time, end_time and expected_start_time ranges. Join flow_runs ON "
         "task_runs.flow_run_id = flow_runs.id.",
@@ -241,8 +242,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Work Pools",
         "infrastructure",
         "work pool, infrastructure, process, kubernetes, docker, pool status",
-        "One row per work pool, keyed by name. Pushed down: id, name and type (= or IN). base_job_template is "
-        "JSON. Join work_queues and workers ON work_pool_name.",
+        "One row per work pool, keyed by id (name is unique too). Pushed down: id, name and type (= or IN). "
+        "base_job_template is JSON. Join work_queues and workers ON work_pool_id = work_pools.id.",
         "Work pools with their type, status and concurrency limit.",
     ),
     "work_queues": _doc(
@@ -250,8 +251,9 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Work Queues",
         "infrastructure",
         "work queue, queue, priority, paused, last polled",
-        "One row per work queue, keyed by id. Pushed down: id and name (= or IN). Lower priority numbers are "
-        "served first. status is READY, NOT_READY or PAUSED.",
+        "One row per work queue, keyed by id. Pushed down: id and name (= or IN), work_pool_name (= or IN, read "
+        "per pool). Lower priority numbers are served first. status is READY, NOT_READY or PAUSED. Join "
+        "work_pools ON work_queues.work_pool_id = work_pools.id.",
         "Work queues per pool, with priority, status and when a worker last polled them.",
     ),
     "workers": _doc(
@@ -260,7 +262,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "infrastructure",
         "worker, workers, heartbeat, online, offline",
         "One row per worker per work pool. Pushed down: work_pool_name (= or IN, otherwise every pool is read), "
-        "status (ONLINE / OFFLINE) and last_heartbeat_time ranges.",
+        "status (ONLINE / OFFLINE) and last_heartbeat_time ranges. Join work_pools ON workers.work_pool_id = "
+        "work_pools.id.",
         "Which workers are polling which pools, and when they last sent a heartbeat.",
     ),
     "concurrency_limits": _doc(
@@ -277,7 +280,7 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Automations",
         "automation",
         "automation, trigger, actions, alerts, notifications",
-        "One row per automation, keyed by id. trigger and actions are JSON; trigger_type is the trigger's type "
+        "One row per automation, keyed by id. trigger_definition and actions are JSON; trigger_type is the trigger's type "
         "(event, compound, sequence, metric). Pushed down: id and name (= or IN), list_contains(tags, 'x').",
         "Automations with their triggers and actions.",
     ),
@@ -317,7 +320,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "block, blocks, block document, credentials, configuration",
         "One row per named block document, keyed by id: name, block_type_slug, block_type_name, is_anonymous and "
         "secret_fields (names of the fields Prefect treats as secret). Block data is never read or returned. "
-        "Pushed down: id, name, block_type_slug (= or IN) and is_anonymous.",
+        "Pushed down: id, name, block_type_slug (= or IN) and is_anonymous. Join block_types ON "
+        "block_documents.block_type_id = block_types.id.",
         "Which blocks exist and of what type. Values are never read.",
     ),
     "variables": _doc(
@@ -344,7 +348,7 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
     ),
     "task_runs_unified": _doc(
         "Prefect task runs in the cross-orchestrator unified.task_runs shape.",
-        "Unified Task Runs From Prefect",
+        "Unified Prefect Task Runs",
         "unified_runs",
         "unified task runs, cross orchestrator, union all, task status",
         "One row per task run. run_id is the flow-run id (joins unified.runs.run_id); task_run_id the task-run id; "
@@ -374,7 +378,7 @@ AGENT_TEST_TASKS = [
     {
         "name": "validation_error",
         "prompt": (
-            "Using the prefect catalog, what error message did the 'validate' task log in the failed "
+            "Using the prefect catalog, what was the first error line the 'validate' task logged in the failed "
             "'broken-import' flow run?"
         ),
     },
@@ -390,7 +394,7 @@ AGENT_TEST_TASKS = [
     },
     {
         "name": "artifact_keys",
-        "prompt": "Using the prefect catalog, how many versions of each artifact key exist?",
+        "prompt": "Using the prefect catalog, how many versions of each keyed artifact exist?",
     },
     {
         "name": "safe_variables",
@@ -401,13 +405,53 @@ AGENT_TEST_TASKS = [
         "prompt": "Using the prefect catalog's event feed, how many 'prefect.flow-run.Failed' events were recorded?",
     },
     {
+        "name": "deployed_flows",
+        "prompt": "Using the prefect catalog, which flows have a deployment, and in which work pool does each run?",
+    },
+    {
+        "name": "pool_inventory",
+        "prompt": (
+            "Using the prefect catalog, for each work pool give its type, how many work queues it has and how "
+            "many workers poll it."
+        ),
+    },
+    {
+        "name": "flow_level_errors",
+        "prompt": (
+            "Using the prefect catalog, how many error lines did flow runs log themselves, outside of any task?"
+        ),
+    },
+    {
+        "name": "block_inventory",
+        "prompt": "Using the prefect catalog, list the named blocks together with their block type's display name.",
+    },
+    {
+        "name": "concurrency_caps",
+        "prompt": "Using the prefect catalog, what slot limit does each concurrency limit have?",
+    },
+    {
+        "name": "enabled_automations",
+        "prompt": "Using the prefect catalog, which automations are enabled?",
+    },
+    {
+        "name": "secret_tagged_variables",
+        "prompt": "Using the prefect catalog, which variables carry the tag 'secret'?",
+    },
+    {
+        "name": "unified_task_status",
+        "prompt": (
+            "Using the prefect catalog's unified schema, how many task runs are there per unified status for the "
+            "pipeline 'etl-orders'?"
+        ),
+    },
+    {
         "name": "normalize_state",
         "prompt": "What unified status does the prefect worker assign to the Prefect state type 'CRASHED'?",
     },
 ]
 
 CATALOG_TAGS = {
-    "vgi.title": "Prefect",
+    "vgi.title": "Prefect Orchestration",
     "vgi.subtitle": "Prefect 3 flows, runs, logs, deployments, work pools and events as SQL tables",
     "vgi.doc_llm": CATALOG_DOC_LLM,
     "vgi.doc_md": CATALOG_DOC_MD,

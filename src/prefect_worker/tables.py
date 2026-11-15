@@ -630,7 +630,11 @@ def _log_fields(task_level: bool) -> list[pa.Field[Any]]:
     return [
         *fields,
         column("timestamp", TSTZ, "When the line was logged.", nullable=False),
-        column("level", pa.int32(), "Python logging level: 10 debug, 20 info, 30 warning, 40 error, 50 critical."),
+        column(
+            "level",
+            pa.int32(),
+            "Severity as a Python logging level number (10 debug, 20 info, 30 warning, 40 error, 50 critical).",
+        ),
         column("level_name", pa.string(), "Lower-case level name: debug, info, warning, error or critical."),
         column("logger", pa.string(), "Logger name, e.g. 'prefect.flow_runs' or 'prefect.task_runs'."),
         column("message", pa.string(), "The log message."),
@@ -765,7 +769,9 @@ class WorkQueues(_Scan):
             column("work_pool_id", pa.string(), "Id of that work pool."),
             column("description", pa.string(), "Queue description."),
             column("is_paused", pa.bool_(), "True when the queue is paused."),
-            column("priority", pa.int64(), "Priority within the pool; lower is served first."),
+            column(
+                "priority", pa.int64(), "Priority rank within the pool (1 = highest; lower ranks are served first)."
+            ),
             column("concurrency_limit", pa.int64(), "Maximum concurrent runs from the queue (count)."),
             column("status", pa.string(), "READY, NOT_READY or PAUSED."),
             column("last_polled", TSTZ, "When a worker last polled the queue."),
@@ -935,7 +941,7 @@ class Automations(_Scan):
             column("enabled", pa.bool_(), "True when the automation is active."),
             column("tags", STR_LIST, "Automation tags."),
             column("trigger_type", pa.string(), "Trigger type: event, compound, sequence or metric."),
-            column("trigger", JSON, "The full trigger as JSON (match, expect, posture, threshold, within)."),
+            column("trigger_definition", JSON, "The full trigger as JSON (match, expect, posture, threshold, within)."),
             column("actions", JSON, "Actions run when the trigger fires, as a JSON array."),
             column("actions_on_trigger", JSON, "Actions run when the trigger enters triggered state."),
             column("actions_on_resolve", JSON, "Actions run when the trigger resolves."),
@@ -968,7 +974,7 @@ class Automations(_Scan):
                 "enabled": a.get("enabled"),
                 "tags": a.get("tags") or [],
                 "trigger_type": (a.get("trigger") or {}).get("type"),
-                "trigger": json_text(a.get("trigger")),
+                "trigger_definition": json_text(a.get("trigger")),
                 "actions": json_text(a.get("actions")),
                 "actions_on_trigger": json_text(a.get("actions_on_trigger")),
                 "actions_on_resolve": json_text(a.get("actions_on_resolve")),

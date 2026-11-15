@@ -153,7 +153,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "automations": [
         (
             "Enabled automations and the events they expect",
-            f"SELECT name, trigger_type, trigger->>'$.posture' AS posture, trigger->'$.expect' AS expects "
+            f"SELECT name, trigger_type, trigger_definition->>'$.posture' AS posture, trigger_definition->'$.expect' AS expects "
             f"FROM {Q}.automations WHERE enabled ORDER BY name",
         ),
     ],
@@ -318,19 +318,25 @@ MAIN_TABLES = [
         ["schedule_id"],
         ((["deployment_id"], "deployments", ["id"]),),
     ),
-    _table("flow_runs", FlowRuns, ["main"], ["id"], ((["flow_id"], "flows", ["id"]),)),
-    _table("task_runs", TaskRuns, ["main"], ["id"]),
+    _table(
+        "flow_runs",
+        FlowRuns,
+        ["main"],
+        ["id"],
+        ((["flow_id"], "flows", ["id"]), (["deployment_id"], "deployments", ["id"])),
+    ),
+    _table("task_runs", TaskRuns, ["main"], ["id"], ((["flow_run_id"], "flow_runs", ["id"]),)),
     _table("flow_run_logs", FlowRunLogs, ["main"], ["id"]),
     _table("task_run_logs", TaskRunLogs, ["main"], ["id"]),
-    _table("work_pools", WorkPools, ["main"], ["name"]),
-    _table("work_queues", WorkQueues, ["main"], ["id"]),
-    _table("workers", Workers, ["main"], ["work_pool_name", "id"], ((["work_pool_name"], "work_pools", ["name"]),)),
+    _table("work_pools", WorkPools, ["main"], ["id"]),
+    _table("work_queues", WorkQueues, ["main"], ["id"], ((["work_pool_id"], "work_pools", ["id"]),)),
+    _table("workers", Workers, ["main"], ["id"], ((["work_pool_id"], "work_pools", ["id"]),)),
     _table("concurrency_limits", ConcurrencyLimits, ["main"], ["id"]),
     _table("automations", Automations, ["main"], ["id"]),
     _table("events", Events, ["main"], ["id"]),
     _table("artifacts", Artifacts, ["main"], ["id"]),
     _table("block_types", BlockTypes, ["main"], ["id"]),
-    _table("block_documents", BlockDocuments, ["main"], ["id"]),
+    _table("block_documents", BlockDocuments, ["main"], ["id"], ((["block_type_id"], "block_types", ["id"]),)),
     _table("variables", Variables, ["main"], ["name"]),
 ]
 UNIFIED_TABLES = [
