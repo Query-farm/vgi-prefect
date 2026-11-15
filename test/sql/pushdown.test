@@ -1,0 +1,188 @@
+# name: test/sql/pushdown.test
+# description: SQL predicates reach Prefect as JSON filter bodies (checked in the replay's request log); the replay 422s any key Prefect would reject
+# group: [prefect]
+
+require vgi
+
+require-env PREFECT_WORKER
+
+require-env PREFECT_MOCK
+
+# The replay's request log is read with read_json over HTTP.
+statement ok
+LOAD httpfs;
+
+statement ok
+LOAD json;
+
+statement ok
+ATTACH 'prefect' (TYPE vgi, LOCATION '{PREFECT_WORKER}');
+
+statement ok
+CREATE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api', AUTH_STRING 'admin:prefect-fixture-pw');
+
+statement ok
+CREATE MACRO reqs(p) AS TABLE SELECT body FROM read_json('{PREFECT_MOCK}/__requests', columns = {'method': 'VARCHAR', 'path': 'VARCHAR', 'cloud': 'BOOLEAN', 'body': 'JSON'}) WHERE path = p;
+
+# flow name, state types, tags and a start-time range in one body.
+query I
+SELECT count(*) FROM prefect.main.flow_runs WHERE flow_name = 'etl-orders' AND state_type IN ('COMPLETED', 'CANCELLED') AND list_contains(tags, 'nightly') AND start_time >= TIMESTAMPTZ '2026-11-15 07:30:00+00' AND start_time < TIMESTAMPTZ '2026-11-15 08:00:00+00';
+----
+2
+
+query TTTTT
+SELECT body->'$.flows.name.any_', body->'$.flow_runs.state.type.any_', body->'$.flow_runs.tags.all_', body->>'$.flow_runs.start_time.after_', body->>'$.flow_runs.start_time.before_' FROM reqs('/flow_runs/filter') WHERE body->>'$.flow_runs.start_time.after_' = '2026-11-15T07:30:00Z' LIMIT 1;
+----
+["etl-orders"]	["CANCELLED","COMPLETED"]	["nightly"]	2026-11-15T07:30:00Z	2026-11-15T08:00:00Z
+
+# deployment name, work pool and queue, expected-start range.
+query I
+SELECT count(*) FROM prefect.main.flow_runs WHERE deployment_name = 'nightly' AND work_pool_name = 'local-pool' AND work_queue_name = 'default' AND expected_start_time <= TIMESTAMPTZ '2026-11-15 07:37:00+00';
+----
+2
+
+query TTTT
+SELECT body->'$.deployments.name.any_', body->'$.work_pools.name.any_', body->'$.flow_runs.work_queue_name.any_', body->>'$.flow_runs.expected_start_time.before_' FROM reqs('/flow_runs/filter') WHERE body->>'$.flow_runs.expected_start_time.before_' = '2026-11-15T07:37:00Z' LIMIT 1;
+----
+["nightly"]	["local-pool"]	["default"]	2026-11-15T07:37:00Z
+
+# task runs of one flow run, by state name.
+query T
+SELECT name FROM prefect.main.task_runs WHERE flow_run_id = '6e6b8d05-3484-47c6-9b33-b7a1520cd0d5' AND state_name = 'Completed';
+----
+render-132
+
+query TT
+SELECT body->'$.task_runs.flow_run_id.any_', body->'$.task_runs.state.name.any_' FROM reqs('/task_runs/filter') WHERE body->>'$.task_runs.flow_run_id.any_[0]' = '6e6b8d05-3484-47c6-9b33-b7a1520cd0d5' LIMIT 1;
+----
+["6e6b8d05-3484-47c6-9b33-b7a1520cd0d5"]	["Completed"]
+
+# level_name → level ge_/le_; flow_run_logs always asks for task_run_id IS NULL.
+query T
+SELECT message[1:39] FROM prefect.main.flow_run_logs WHERE level_name = 'error' AND timestamp >= TIMESTAMPTZ '2026-11-15 07:36:17.7+00';
+----
+Encountered exception during execution:
+
+query TTTT
+SELECT body->'$.logs.task_run_id.is_null_', body->'$.logs.level.ge_', body->'$.logs.level.le_', body->>'$.logs.timestamp.after_' FROM reqs('/logs/filter') WHERE body->>'$.logs.timestamp.after_' = '2026-11-15T07:36:17.700000Z' LIMIT 1;
+----
+true	40	40	2026-11-15T07:36:17.700000Z
+
+# task_run_logs: task_run_id → any_, numeric level bound → ge_.
+query I
+SELECT count(*) FROM prefect.main.task_run_logs WHERE task_run_id = '01a1de22-b014-7f24-a26d-b0aade3b5b87' AND level > 20;
+----
+2
+
+query TT
+SELECT body->'$.logs.task_run_id.any_', body->'$.logs.level.ge_' FROM reqs('/logs/filter') WHERE body->>'$.logs.task_run_id.any_[0]' = '01a1de22-b014-7f24-a26d-b0aade3b5b87' LIMIT 1;
+----
+["01a1de22-b014-7f24-a26d-b0aade3b5b87"]	20
+
+# events: occurred window, names and resource ids.
+query I
+SELECT count(*) FROM prefect.main.events WHERE event IN ('prefect.flow-run.Failed', 'prefect.flow-run.Completed') AND occurred BETWEEN TIMESTAMPTZ '2026-11-15 07:36:00+00' AND TIMESTAMPTZ '2026-11-15 07:36:20+00';
+----
+4
+
+query TTT
+SELECT body->'$.filter.event.name', body->>'$.filter.occurred.since', body->>'$.filter.occurred.until' FROM reqs('/events/filter') WHERE body->>'$.filter.occurred.since' = '2026-11-15T07:36:00Z' LIMIT 1;
+----
+["prefect.flow-run.Completed","prefect.flow-run.Failed"]	2026-11-15T07:36:00Z	2026-11-15T07:36:20Z
+
+query T
+SELECT event FROM prefect.main.events WHERE resource_id = 'prefect.automation.a6945b90-6121-4125-a7f8-c277d79191fd' ORDER BY occurred;
+----
+prefect.automation.created
+prefect.automation.triggered
+prefect.automation.action.triggered
+prefect.automation.action.executed
+
+query T
+SELECT body->'$.filter.resource.id' FROM reqs('/events/filter') WHERE body->>'$.filter.resource.id[0]' LIKE 'prefect.automation.%' LIMIT 1;
+----
+["prefect.automation.a6945b90-6121-4125-a7f8-c277d79191fd"]
+
+# starts_with(event, ...) → the event prefix filter.
+query I
+SELECT count(*) FROM prefect.main.events WHERE starts_with(event, 'prefect.worker.');
+----
+4
+
+query T
+SELECT body->'$.filter.event.prefix' FROM reqs('/events/filter') WHERE body->>'$.filter.event.prefix[0]' = 'prefect.worker.' LIMIT 1;
+----
+["prefect.worker."]
+
+# Events page through /events/filter/next with the page token (116 events, 50 per page).
+query I
+SELECT count(*) FROM read_json('{PREFECT_MOCK}/__requests', columns = {'method': 'VARCHAR', 'path': 'VARCHAR', 'cloud': 'BOOLEAN', 'body': 'JSON'}) WHERE path = '/events/filter/next';
+----
+<REGEX>:[1-9][0-9]*
+
+# unified.runs: status → state types, pipeline → flow name.
+query T
+SELECT raw_status FROM prefect.unified.runs WHERE status = 'failed' AND pipeline = 'broken-import';
+----
+Failed
+
+query TT
+SELECT body->'$.flow_runs.state.type.any_', body->'$.flows.name.any_' FROM reqs('/flow_runs/filter') WHERE body->>'$.flows.name.any_[0]' = 'broken-import' LIMIT 1;
+----
+["CRASHED","FAILED"]	["broken-import"]
+
+# A status no Prefect state maps to reads nothing at all.
+query I
+SELECT count(*) FROM prefect.unified.runs WHERE status = 'skipped';
+----
+0
+
+# unified.task_runs: run_id → flow_run_id.
+query TI
+SELECT task_name, attempt FROM prefect.unified.task_runs WHERE run_id = '6e6b8d05-3484-47c6-9b33-b7a1520cd0d5';
+----
+render	2
+
+query T
+SELECT body->'$.task_runs.flow_run_id.any_' FROM reqs('/task_runs/filter') WHERE body->>'$.task_runs.flow_run_id.any_[0]' = '6e6b8d05-3484-47c6-9b33-b7a1520cd0d5' AND (body->'$.task_runs.state') IS NULL LIMIT 1;
+----
+["6e6b8d05-3484-47c6-9b33-b7a1520cd0d5"]
+
+# deployments: paused → eq_, tags → all_.
+query T
+SELECT name FROM prefect.main.deployments WHERE NOT paused AND list_contains(tags, 'nightly');
+----
+nightly
+
+query TT
+SELECT body->'$.deployments.paused.eq_', body->'$.deployments.tags.all_' FROM reqs('/deployments/filter') WHERE (body->'$.deployments.paused') IS NOT NULL LIMIT 1;
+----
+false	["nightly"]
+
+# workers: work_pool_name picks the pool path.
+query T
+SELECT name FROM prefect.main.workers WHERE work_pool_name = 'local-pool' AND status = 'OFFLINE';
+----
+fixture-worker
+
+query T
+SELECT body->'$.workers.status.any_' FROM reqs('/work_pools/local-pool/workers/filter') WHERE (body->'$.workers') IS NOT NULL LIMIT 1;
+----
+["OFFLINE"]
+
+# Block documents are always requested without secrets.
+query I
+SELECT count(*) FROM prefect.main.block_documents WHERE block_type_slug = 'secret';
+----
+1
+
+query TT
+SELECT DISTINCT body->'$.include_secrets', body->'$.block_types.slug.any_' FROM reqs('/block_documents/filter') WHERE (body->'$.block_types') IS NOT NULL;
+----
+false	["secret"]
+
+# Paging: every listing carries limit/offset; the default page is Prefect's maximum (200).
+query I
+SELECT count(*) FROM reqs('/variables/filter') WHERE (body->>'$.limit')::INT NOT BETWEEN 1 AND 200 OR (body->'$.offset') IS NULL;
+----
+0

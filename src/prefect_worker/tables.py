@@ -980,6 +980,19 @@ class Automations(_Scan):
         ]
 
 
+def _range_prefix(bounds: tuple[Any, bool, Any, bool] | None) -> list[str]:
+    """Prefix shared by every string in a range (DuckDB turns ``starts_with`` / ``LIKE 'p%'`` into one)."""
+    if bounds is None or not isinstance(bounds[0], str) or not isinstance(bounds[2], str):
+        return []
+    lo, hi = bounds[0], bounds[2]
+    if lo and not bounds[3] and hi == lo[:-1] + chr(ord(lo[-1]) + 1):
+        return [lo]  # [p, p with its last character bumped): exactly starts_with(p)
+    n = 0
+    while n < min(len(lo), len(hi)) and lo[n] == hi[n]:
+        n += 1
+    return [lo[:n]] if n else []
+
+
 # Lower bound sent when a query has no occurred filter (Prefect otherwise reads only the last day).
 EVENTS_EPOCH = "2000-01-01T00:00:00Z"
 
@@ -1017,7 +1030,7 @@ class Events(_Scan):
                 return []
             flt["event"] = {"name": sorted({str(n) for n in names})}
         else:
-            prefixes = pd.starts_with("event")
+            prefixes = pd.starts_with("event") or _range_prefix(pd.bounds("event"))
             if prefixes:
                 flt["event"] = {"prefix": prefixes}
         resources = pd.values("resource_id")

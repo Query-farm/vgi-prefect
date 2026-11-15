@@ -1,0 +1,65 @@
+# name: test/sql/cloud.test
+# description: Prefect Cloud-style workspace URL with an API key (bearer auth) against the replay's Cloud mount
+# group: [prefect]
+
+require vgi
+
+require-env PREFECT_WORKER
+
+require-env PREFECT_MOCK
+
+statement ok
+ATTACH 'prefect' (TYPE vgi, LOCATION '{PREFECT_WORKER}');
+
+# A wrong key is refused with the HTTP status and a pointer at the secret.
+statement ok
+CREATE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api/accounts/acc-1/workspaces/ws-1', API_KEY 'pnu_wrong');
+
+statement error
+SELECT count(*) FROM prefect.main.flows;
+----
+<REGEX>:.*HTTP 401.*API_KEY.*
+
+statement ok
+CREATE OR REPLACE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api/accounts/acc-1/workspaces/ws-1/', API_KEY 'pnu_fixture_key', UI_URL 'https://app.example.com/account/acc-1/workspace/ws-1');
+
+query I
+SELECT count(*) FROM prefect.main.flow_runs;
+----
+9
+
+query T
+SELECT url FROM prefect.unified.runs WHERE raw_status = 'Failed';
+----
+https://app.example.com/account/acc-1/workspace/ws-1/runs/flow-run/7945f7c0-5fcc-42c9-9f83-de82f5ea8cd7
+
+query I
+SELECT count(*) FROM prefect.main.events WHERE event = 'prefect.flow-run.Completed';
+----
+4
+
+# Self-hosted credentials do not open a Cloud workspace.
+statement ok
+CREATE OR REPLACE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api/accounts/acc-1/workspaces/ws-1', AUTH_STRING 'admin:prefect-fixture-pw');
+
+statement error
+SELECT count(*) FROM prefect.main.flows;
+----
+<REGEX>:.*HTTP 401.*
+
+# Invalid secret values fail before any request.
+statement ok
+CREATE OR REPLACE SECRET pf (TYPE prefect, API_URL 'ftp://example.com/api');
+
+statement error
+SELECT count(*) FROM prefect.main.flows;
+----
+<REGEX>:.*API_URL must be set to an http.*
+
+statement ok
+CREATE OR REPLACE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api', PAGE_SIZE 500);
+
+statement error
+SELECT count(*) FROM prefect.main.flows;
+----
+<REGEX>:.*PAGE_SIZE must be between 1 and 200.*
