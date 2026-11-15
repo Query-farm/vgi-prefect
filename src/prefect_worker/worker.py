@@ -153,7 +153,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "automations": [
         (
             "Enabled automations and the events they expect",
-            f"SELECT name, trigger_type, trigger_definition->>'$.posture' AS posture, trigger_definition->'$.expect' AS expects "
+            "SELECT name, trigger_type, trigger_definition->>'$.posture' AS posture, "
+            f"trigger_definition->'$.expect' AS expects "
             f"FROM {Q}.automations WHERE enabled ORDER BY name",
         ),
     ],

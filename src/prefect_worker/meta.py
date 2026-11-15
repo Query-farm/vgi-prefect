@@ -210,7 +210,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Task Run History",
         "runs",
         "task run, tasks, task state, retries, failed tasks, duration, cache",
-        "One row per task run, keyed by id (join flow_runs ON task_runs.flow_run_id = flow_runs.id). run_count counts attempts (2 = one retry); max_retries is the "
+        "One row per task run, keyed by id (join flow_runs ON task_runs.flow_run_id = flow_runs.id). "
+        "run_count counts attempts (2 = one retry); max_retries is the "
         "configured retry budget. Pushed down: id, name, flow_run_id (= or IN), state_type, state_name, "
         "list_contains(tags, 'x'), start_time, end_time and expected_start_time ranges. Join flow_runs ON "
         "task_runs.flow_run_id = flow_runs.id.",
@@ -280,7 +281,8 @@ TABLE_DOCS: dict[str, dict[str, str]] = {
         "Prefect Automations",
         "automation",
         "automation, trigger, actions, alerts, notifications",
-        "One row per automation, keyed by id. trigger_definition and actions are JSON; trigger_type is the trigger's type "
+        "One row per automation, keyed by id. trigger_definition and actions are JSON; "
+        "trigger_type is the trigger's type "
         "(event, compound, sequence, metric). Pushed down: id and name (= or IN), list_contains(tags, 'x').",
         "Automations with their triggers and actions.",
     ),
