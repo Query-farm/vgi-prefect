@@ -1,148 +1,321 @@
 # name: test/sql/prefect.test
-# description: SQL-level tests for the prefect worker, run through DuckDB by ci/run-integration.sh
+# description: Every prefect table and function against the recorded Prefect 3.9.3 replay (self-hosted mount, basic auth)
 # group: [prefect]
-# managed-by: vgi-starters (edit upstream in shared/, then run tools/render.py)
 
 require vgi
 
 require-env PREFECT_WORKER
 
-require-env PREFECT_MOCK_API
-
-require-env PREFECT_MOCK_API_AUTH
+require-env PREFECT_MOCK
 
 statement ok
 ATTACH 'prefect' (TYPE vgi, LOCATION '{PREFECT_WORKER}');
 
-# ---------------------------------------------------------------- greet (scalar)
+statement ok
+LOAD json;
 
-query T
-SELECT prefect.main.greet('Ada');
-----
-Hi, Ada!
-
-query T
-SELECT prefect.main.greet('Ada', 'formal');
-----
-Good day, Ada.
-
-# NULL in, NULL out.
-query T
-SELECT prefect.main.greet(NULL);
-----
-NULL
-
-# Works over a whole column, one result per row.
-query T
-SELECT prefect.main.greet(name) FROM (VALUES ('Ada'), ('Grace'), (NULL)) AS t(name) ORDER BY ALL NULLS LAST;
-----
-Hi, Ada!
-Hi, Grace!
-NULL
-
-# `style` is constrained to 'casual' | 'formal' and checked when the query is bound.
-# (No expected message: each SDK words constraint errors its own way.)
+# No secret yet: a clear error that names the secret type.
 statement error
-SELECT prefect.main.greet('Ada', 'loud');
+SELECT count(*) FROM prefect.main.flows;
 ----
-<REGEX>:.*
+<REGEX>:.*CREATE SECRET \(TYPE prefect.*
 
-# ------------------------------------------------------ sequence_table (table fn)
+# A small page size so every scan below crosses several pages.
+statement ok
+CREATE SECRET pf (TYPE prefect, API_URL '{PREFECT_MOCK}/api', AUTH_STRING 'admin:prefect-fixture-pw', PAGE_SIZE 3);
 
-query II
-SELECT n, squared FROM prefect.main.sequence_table(4) ORDER BY n;
+# ---------------------------------------------------------------- flows / deployments
+
+query TT
+SELECT name, tags FROM prefect.main.flows ORDER BY name;
 ----
-0	0
-1	1
-2	4
-3	9
+broken-import	[]
+etl-orders	[etl]
+flaky-report	[]
 
-# Named argument with a default.
-query I
-SELECT n FROM prefect.main.sequence_table(3, step := 5) ORDER BY n;
+query T
+SELECT name FROM prefect.main.flows WHERE list_contains(tags, 'etl');
 ----
-0
-5
-10
+etl-orders
 
-# Larger than one batch: the cursor must carry across process calls.
-query II
-SELECT count(*), max(n) FROM prefect.main.sequence_table(25000);
+query TTTTTTI
+SELECT name, flow_name, work_pool_name, work_queue_name, status, parameters, schedule_count FROM prefect.main.deployments;
 ----
-25000	24999
+nightly	etl-orders	local-pool	default	NOT_READY	{"n": 3}	1
+
+query TTTTT
+SELECT deployment_name, cron, timezone, active, interval_seconds FROM prefect.main.deployment_schedules;
+----
+nightly	0 6 * * *	UTC	true	NULL
+
+# ---------------------------------------------------------------- flow runs
+
+query TTI
+SELECT flow_name, state_type, count(*) FROM prefect.main.flow_runs GROUP BY ALL ORDER BY ALL;
+----
+broken-import	FAILED	1
+etl-orders	CANCELLED	1
+etl-orders	COMPLETED	3
+etl-orders	SCHEDULED	3
+flaky-report	COMPLETED	1
+
+query TTT
+SELECT name, flow_name, state_name FROM prefect.main.flow_runs WHERE state_type IN ('FAILED', 'CANCELLED') ORDER BY name;
+----
+primitive-rat	etl-orders	Cancelled
+urban-hawk	broken-import	Failed
 
 query I
-SELECT count(*) FROM prefect.main.sequence_table(0);
+SELECT count(*) FROM prefect.main.flow_runs WHERE list_contains(tags, 'etl') AND state_type = 'COMPLETED';
 ----
-0
+3
 
-# count is constrained to [0, 1000000].
-statement error
-SELECT * FROM prefect.main.sequence_table(-1);
+query TT
+SELECT name, deployment_name FROM prefect.main.flow_runs WHERE deployment_name = 'nightly' AND NOT auto_scheduled ORDER BY name;
 ----
-<REGEX>:.*
+flawless-mustang	nightly
+primitive-rat	nightly
 
-# Named arguments are constrained too: step >= 1.
-statement error
-SELECT * FROM prefect.main.sequence_table(3, step := 0);
+query I
+SELECT count(*) FROM prefect.main.flow_runs WHERE auto_scheduled AND created_by_type = 'SCHEDULE' AND start_time IS NULL;
 ----
-<REGEX>:.*
+3
 
-# ------------------------------------------------- fetch_items (REST table fn)
-
-query IIT
-SELECT count(*), sum(id), min(name) FROM prefect.main.fetch_items('{PREFECT_MOCK_API}', page_size := 4);
+query TT
+SELECT name, parameters->>'$.n' FROM prefect.main.flow_runs WHERE flow_name = 'etl-orders' AND start_time >= TIMESTAMPTZ '2026-11-15 07:36:13+00' AND start_time < TIMESTAMPTZ '2026-11-15 07:36:30+00' ORDER BY name;
 ----
-25	325	item-01
+flawless-mustang	4
+invisible-partridge	8
+
+query T
+SELECT name FROM prefect.main.flow_runs WHERE work_pool_name = 'local-pool' AND state_type = 'COMPLETED';
+----
+flawless-mustang
+
+# ---------------------------------------------------------------- task runs
+
+query TIIT
+SELECT name, run_count, max_retries, state_name FROM prefect.main.task_runs WHERE run_count > 1;
+----
+render-132	2	2	Completed
 
 query TI
-SELECT category, count(*) FROM prefect.main.fetch_items('{PREFECT_MOCK_API}') GROUP BY category ORDER BY category;
+SELECT state_type, count(*) FROM prefect.main.task_runs GROUP BY ALL ORDER BY ALL;
 ----
-hardware	8
-service	8
-software	9
+COMPLETED	10
+FAILED	1
 
-# The harness runs PREFECT_MOCK_API with MOCK_API_FLAKY=1: every page answers
-# 429 + Retry-After once, so every query above also exercised the retry path.
-
-# PREFECT_MOCK_API_AUTH requires a bearer token ('test-token'). Every language's
-# fetch_items must put the HTTP status code in its error message.
-statement error
-SELECT count(*) FROM prefect.main.fetch_items('{PREFECT_MOCK_API_AUTH}');
+query T
+SELECT t.name FROM prefect.main.task_runs t JOIN prefect.main.flow_runs r ON t.flow_run_id = r.id WHERE r.name = 'invisible-partridge' ORDER BY t.name;
 ----
-401
-
-statement ok
-CREATE SECRET prefect_api_test (TYPE prefect_api, TOKEN 'test-token');
+extract-c88
+load-21c
+transform-3a3
 
 query I
-SELECT count(*) FROM prefect.main.fetch_items('{PREFECT_MOCK_API_AUTH}', page_size := 25);
+SELECT count(*) FROM prefect.main.task_runs WHERE list_contains(tags, 'io');
 ----
-25
+6
 
-# Several pages: the token must survive between batches (over HTTP each batch is a
-# separate request, so a token kept only in memory is lost after page 1).
+# ---------------------------------------------------------------- logs
+
+query TIT
+SELECT level_name, level, count(*) FROM prefect.main.flow_run_logs GROUP BY ALL ORDER BY level;
+----
+info	20	19
+error	40	1
+
+query TI
+SELECT level_name, count(*) FROM prefect.main.task_run_logs GROUP BY ALL ORDER BY ALL;
+----
+error	4
+info	17
+warning	1
+
+query T
+SELECT l.message FROM prefect.main.task_run_logs l JOIN prefect.main.task_runs t ON l.task_run_id = t.id WHERE t.name = 'validate-723' AND l.level_name = 'error' AND l.logger = 'prefect.task_runs' AND l.message LIKE 'batch%';
+----
+batch b-42 failed validation
+
 query I
-SELECT count(*) FROM prefect.main.fetch_items('{PREFECT_MOCK_API_AUTH}', page_size := 7);
+SELECT count(*) FROM prefect.main.task_run_logs WHERE level >= 30 AND timestamp >= TIMESTAMPTZ '2026-11-15 07:36:17.7055+00';
 ----
-25
+4
 
-statement ok
-DROP SECRET prefect_api_test;
+# ---------------------------------------------------------------- infrastructure
 
-# base_url must be http(s).
-statement error
-SELECT * FROM prefect.main.fetch_items('ftp://example.com');
+query TTTT
+SELECT name, type, status, is_paused FROM prefect.main.work_pools;
 ----
-<REGEX>:.*
+local-pool	process	NOT_READY	false
 
-# page_size is a named argument constrained to [1, 1000].
-statement error
-SELECT * FROM prefect.main.fetch_items('{PREFECT_MOCK_API}', page_size := 0);
+query TTI
+SELECT work_pool_name, name, priority FROM prefect.main.work_queues ORDER BY priority, name;
 ----
-<REGEX>:.*
+local-pool	default	1
+local-pool	high-priority	2
 
-statement error
-SELECT * FROM prefect.main.fetch_items('{PREFECT_MOCK_API}', page_size := 5000);
+query TT
+SELECT name, work_pool_name FROM prefect.main.work_queues WHERE work_pool_name = 'local-pool' AND name = 'high-priority';
 ----
-<REGEX>:.*
+high-priority	local-pool
+
+query TTTI
+SELECT work_pool_name, name, status, heartbeat_interval_seconds FROM prefect.main.workers;
+----
+local-pool	fixture-worker	OFFLINE	30
+
+query I
+SELECT count(*) FROM prefect.main.workers WHERE work_pool_name = 'no-such-pool';
+----
+0
+
+query TTTI
+SELECT name, kind, tag, "limit" FROM prefect.main.concurrency_limits ORDER BY name;
+----
+tag:io	tag	io	2
+warehouse-connections	global	NULL	4
+
+# ---------------------------------------------------------------- automations / events
+
+query TTTT
+SELECT name, enabled, trigger_type, trigger->>'$.posture' FROM prefect.main.automations;
+----
+notify-on-failure	true	event	Reactive
+
+query I
+SELECT count(*) FROM prefect.main.events;
+----
+116
+
+query TT
+SELECT event, resource_name FROM prefect.main.events WHERE event = 'prefect.flow-run.Failed';
+----
+prefect.flow-run.Failed	urban-hawk
+
+query TI
+SELECT event, count(*) FROM prefect.main.events WHERE starts_with(event, 'prefect.flow-run.') AND event <> 'prefect.flow-run.heartbeat' GROUP BY ALL ORDER BY ALL;
+----
+prefect.flow-run.Cancelled	1
+prefect.flow-run.Completed	4
+prefect.flow-run.Failed	1
+prefect.flow-run.Pending	5
+prefect.flow-run.Running	5
+prefect.flow-run.Scheduled	2
+prefect.flow-run.Submitting	1
+prefect.flow-run.pull-step.executed	1
+
+query I
+SELECT count(*) FROM prefect.main.events WHERE occurred >= TIMESTAMPTZ '2026-11-15 07:36:17+00' AND occurred < TIMESTAMPTZ '2026-11-15 07:36:18+00' AND event LIKE 'prefect.task-run.%';
+----
+9
+
+# ---------------------------------------------------------------- artifacts / blocks / variables
+
+query TTI
+SELECT key, type, count(*) FROM prefect.main.artifacts GROUP BY ALL ORDER BY ALL;
+----
+orders-report	markdown	3
+orders-summary	table	3
+report-link	markdown	1
+NULL	NULL	1
+
+query I
+SELECT sum((data->'$[1].orders')::INT) FROM prefect.main.artifacts WHERE key = 'orders-summary';
+----
+8
+
+query TTT
+SELECT name, block_type_slug, secret_fields FROM prefect.main.block_documents ORDER BY name;
+----
+alerts-slack	slack-webhook	[url]
+warehouse-dsn	secret	[value]
+
+query I
+SELECT count(*) FROM prefect.main.block_types WHERE slug IN ('secret', 'slack-webhook');
+----
+2
+
+query TTTT
+SELECT name, value, is_masked, value_type FROM prefect.main.variables ORDER BY name;
+----
+orders_threshold	***	true	number
+report_owner	***	true	string
+slack_hook	***	true	string
+warehouse_password	***	true	string
+
+query T
+SELECT name FROM prefect.main.variables WHERE list_contains(tags, 'etl');
+----
+orders_threshold
+
+query TTT
+SELECT name, value, is_masked FROM prefect.main.variable_values(reveal := true) ORDER BY name;
+----
+orders_threshold	100	false
+report_owner	data-team	false
+slack_hook	***	true
+warehouse_password	***	true
+
+query I
+SELECT count(*) FROM prefect.main.variable_values() WHERE value <> '***';
+----
+0
+
+# ---------------------------------------------------------------- unified
+
+query TTI
+SELECT pipeline, status, count(*) FROM prefect.unified.runs GROUP BY ALL ORDER BY ALL;
+----
+broken-import	failed	1
+etl-orders	cancelled	1
+etl-orders	queued	3
+etl-orders	success	3
+flaky-report	success	1
+
+query TI
+SELECT trigger, count(*) FROM prefect.unified.runs GROUP BY ALL ORDER BY ALL;
+----
+api	2
+manual	4
+schedule	3
+
+query TTT
+SELECT orchestrator, pipeline, raw_status FROM prefect.unified.runs WHERE status = 'failed';
+----
+prefect	broken-import	Failed
+
+query TII
+SELECT task_name, attempt, count(*) FROM prefect.unified.task_runs GROUP BY ALL ORDER BY ALL;
+----
+extract	1	3
+load	1	3
+render	2	1
+transform	1	3
+validate	1	1
+
+query TT
+SELECT r.pipeline, t.status FROM prefect.unified.task_runs t JOIN prefect.unified.runs r USING (run_id) WHERE t.status <> 'success';
+----
+broken-import	failed
+
+query I
+SELECT count(*) FROM prefect.unified.runs WHERE status = 'skipped';
+----
+0
+
+query T
+SELECT bool_and(duration_seconds >= 0 AND url LIKE '{PREFECT_MOCK}/runs/flow-run/%') FROM prefect.unified.runs WHERE ended_at IS NOT NULL;
+----
+true
+
+query TT
+SELECT prefect.unified.unified_status('CRASHED'), prefect.unified.unified_status(NULL::VARCHAR);
+----
+failed	queued
+
+# The same shape as every other orchestrator worker: UNION ALL just works.
+query I
+SELECT count(*) FROM (SELECT * FROM prefect.unified.runs UNION ALL SELECT 'other', 'r1', 'p', 'success', NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+----
+10

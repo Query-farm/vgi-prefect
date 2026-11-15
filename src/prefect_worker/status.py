@@ -13,7 +13,7 @@ from typing import Annotated, ClassVar
 import pyarrow as pa
 import pyarrow.compute as pc
 from vgi.arguments import Param, Returns
-from vgi.metadata import FunctionExample
+from vgi.metadata import FunctionExample, NullHandling
 from vgi.scalar_function import ScalarFunction
 
 from .meta import object_tags
@@ -32,6 +32,8 @@ class UnifiedStatus(ScalarFunction):
         """Function metadata surfaced to DuckDB, agents and vgi-lint."""
 
         name = "unified_status"
+        # NULL is a state too (no state yet): it maps to queued rather than propagating.
+        null_handling = NullHandling.SPECIAL
         description = "Map a Prefect state type onto queued/running/success/failed/cancelled"
         tags: ClassVar[dict[str, str]] = {
             **object_tags(

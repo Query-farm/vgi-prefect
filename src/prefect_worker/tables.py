@@ -33,7 +33,7 @@ from .scan import (
 
 TSTZ = pa.timestamp("us", tz="UTC")
 STR_LIST = pa.list_(pa.string())
-JSON = pa.string()  # Advertised as JSON in descriptions; DuckDB's json functions read VARCHAR directly.
+JSON = pa.json_()
 
 LEVELS = {10: "debug", 20: "info", 30: "warning", 40: "error", 50: "critical"}
 LEVEL_NUMBERS = {v: k for k, v in LEVELS.items()}
@@ -1203,7 +1203,7 @@ class BlockDocuments(_Scan):
                     "block_type_id": b.get("block_type_id"),
                     "block_schema_id": b.get("block_schema_id"),
                     "is_anonymous": b.get("is_anonymous"),
-                    "secret_fields": [str(f) for f in fields.get("secret_fields") or []],
+                    "secret_fields": list(dict.fromkeys(str(f) for f in fields.get("secret_fields") or [])),
                     "created": ts(b.get("created")),
                     "updated": ts(b.get("updated")),
                 }
