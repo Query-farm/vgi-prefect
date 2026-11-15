@@ -115,6 +115,13 @@ SELECT body->'$.filter.event.prefix' FROM reqs('/events/filter') WHERE body->>'$
 ["prefect.worker."]
 
 # Events page through /events/filter/next with the page token (116 events, 50 per page).
+# Scan every event here: the request log is shared by all test files and the runner
+# does not promise an order, so this file must cause the paging it asserts on.
+query I
+SELECT count(*) FROM prefect.main.events;
+----
+116
+
 query I
 SELECT count(*) FROM read_json('{PREFECT_MOCK}/__requests', columns = {'method': 'VARCHAR', 'path': 'VARCHAR', 'cloud': 'BOOLEAN', 'body': 'JSON'}) WHERE path = '/events/filter/next';
 ----
