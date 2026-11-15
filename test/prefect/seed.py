@@ -45,7 +45,7 @@ def configure() -> None:
 
     with api() as c:
         post(c, "work_pools/", {"name": "local-pool", "type": "process", "description": "Fixture process pool"})
-        post(c, "work_pools/local-pool/queues/", {"name": "high-priority", "priority": 1, "description": "Urgent"})
+        post(c, "work_pools/local-pool/queues", {"name": "high-priority", "priority": 2, "description": "Urgent"})
         for name, value, tags in (
             ("orders_threshold", 100, ["etl"]),
             ("report_owner", "data-team", []),
