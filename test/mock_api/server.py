@@ -240,7 +240,7 @@ class Replay:
             anon = (own or {}).get("is_anonymous", {"eq_": False})
             items = [o for o in items if match(kind, o, {"is_anonymous": anon})]
             if not body.get("include_secrets"):
-                items = [{**o, "data": {k: "********" for k in o.get("data") or {}}} for o in items]
+                items = [{**o, "data": dict.fromkeys(o.get("data") or {}, "********")} for o in items]
         return self.page(items, body)
 
     def per_pool(self, kind: str, pool: str, template: str, body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -387,9 +387,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(422, {"detail": "invalid JSON"})
             return
         with replay.lock:
-            replay.requests.append(
-                {"method": method, "path": path, "cloud": cloud, "body": body, "query": query}
-            )
+            replay.requests.append({"method": method, "path": path, "cloud": cloud, "body": body, "query": query})
             first = path not in replay.seen_paths
             replay.seen_paths.add(path)
         if path != "/health" and not self._authorized(cloud):

@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, ClassVar
 
@@ -177,7 +178,7 @@ class Pushdown:
         return lo, b.min_inclusive, hi, b.max_inclusive
 
     def _call_constants(self, column: str, function: StandardFilterFunction) -> list[str]:
-        """String constants ``c`` of every top-level ``function(column, c)`` predicate."""
+        """Collect the string constants ``c`` of every top-level ``function(column, c)`` predicate."""
         if not self.filters:
             return []
         found: list[str] = []
@@ -225,7 +226,7 @@ class Pushdown:
         return out
 
 
-def push_any(body: dict[str, Any], pd: Pushdown, column: str, dotted: str, *, cast: type = str) -> bool:
+def push_any(body: dict[str, Any], pd: Pushdown, column: str, dotted: str, *, cast: Callable[[Any], Any] = str) -> bool:
     """``column = / IN`` → ``dotted.any_``. Returns False when the constraint admits no value."""
     vals = pd.values(column)
     if vals is None:

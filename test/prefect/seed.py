@@ -13,6 +13,7 @@ Values planted here are fixture-only; none is a real credential.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -88,9 +89,7 @@ def configure() -> None:
                 "tags": ["etl", "nightly"],
                 "description": "Nightly orders load",
                 "schedules": [{"schedule": {"cron": "0 6 * * *", "timezone": "UTC"}, "active": True}],
-                "pull_steps": [
-                    {"prefect.deployments.steps.set_working_directory": {"directory": str(HERE)}}
-                ],
+                "pull_steps": [{"prefect.deployments.steps.set_working_directory": {"directory": str(HERE)}}],
             },
         )
     Secret(value="postgresql://etl:fixture-pw@db/warehouse").save("warehouse-dsn", overwrite=True)
@@ -115,10 +114,8 @@ def run() -> None:
         flows.etl_orders(8)
     with tags("reports"):
         flows.flaky_report()
-    try:
+    with contextlib.suppress(ValueError):
         flows.broken_import()
-    except ValueError:
-        pass
     with api() as c:
         post(c, f"deployments/{deployment_id(c)}/create_flow_run", {"parameters": {"n": 4}, "tags": ["adhoc"]})
 

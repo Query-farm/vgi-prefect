@@ -74,7 +74,11 @@ PREFECT_SECRET = SecretTypeSpec(
                 "for Prefect Cloud, or 'http://host:4200/api' for a self-hosted server.",
                 required=True,
             ),
-            _field("api_key", "Prefect Cloud API key (pnu_... or a service-account key), sent as a bearer token.", redact=True),
+            _field(
+                "api_key",
+                "Prefect Cloud API key (pnu_... or a service-account key), sent as a bearer token.",
+                redact=True,
+            ),
             _field(
                 "auth_string",
                 "Self-hosted servers started with PREFECT_SERVER_API_AUTH_STRING: the same 'user:password' string, "
@@ -86,7 +90,11 @@ PREFECT_SECRET = SecretTypeSpec(
                 "Base URL of the Prefect UI for the url columns. Default: derived from api_url "
                 "(https://app.prefect.cloud/account/<a>/workspace/<w>, or api_url without /api).",
             ),
-            _field("page_size", "Objects requested per API page, 1 to 200 (default 200; events use at most 50).", pa.int64()),
+            _field(
+                "page_size",
+                "Objects requested per API page, 1 to 200 (default 200; events use at most 50).",
+                pa.int64(),
+            ),
             _field("timeout", "Per-request timeout in seconds (default 30).", pa.float64()),
         ],
         metadata={"vgi_doc_url": DOC_URL},

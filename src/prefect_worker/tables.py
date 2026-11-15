@@ -106,7 +106,7 @@ class _Scan(ApiScan):
         projection_pushdown = True
 
 
-def _meta(name: str) -> type:
+def _meta(name: str) -> Any:
     class Meta:
         """Table metadata."""
 
@@ -891,7 +891,7 @@ class ConcurrencyLimits(_Scan):
 
     @classmethod
     def requests(cls, client: PrefectClient, pd: Pushdown) -> list[Listing]:
-        """The endpoint takes no filters: every limit is read."""
+        """Read every limit: the endpoint takes no filters."""
         return [listing("/v2/concurrency_limits/filter")]
 
     @classmethod
@@ -1018,7 +1018,7 @@ class Events(_Scan):
 
     @classmethod
     def requests(cls, client: PrefectClient, pd: Pushdown) -> list[Listing]:
-        """occurred → ``occurred.since/until``; event =/IN → ``event.name``; resource_id → ``resource.id``."""
+        """Occurred → ``occurred.since/until``; event =/IN → ``event.name``; resource_id → ``resource.id``."""
         flt: dict[str, Any] = {"order": "ASC"}
         occurred = pd.time_range("occurred")
         flt["occurred"] = {"since": occurred.get("after_", EVENTS_EPOCH)}
@@ -1138,7 +1138,7 @@ class BlockTypes(_Scan):
 
     @classmethod
     def requests(cls, client: PrefectClient, pd: Pushdown) -> list[Listing]:
-        """slug → ``block_types.slug.any_``."""
+        """Slug → ``block_types.slug.any_``."""
         body: dict[str, Any] = {}
         return [listing("/block_types/filter", body)] if push_any(body, pd, "slug", "block_types.slug") else []
 

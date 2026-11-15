@@ -55,9 +55,9 @@ from .tables import (
     TaskRunLogs,
     TaskRuns,
     Variables,
+    Workers,
     WorkPools,
     WorkQueues,
-    Workers,
 )
 from .unified import UnifiedRuns, UnifiedTaskRuns
 
@@ -66,7 +66,10 @@ U = f"{CATALOG_NAME}.unified"
 
 EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "flows": [
-        ("Flows with a given tag", f"SELECT name, created FROM {Q}.flows WHERE list_contains(tags, 'etl') ORDER BY name"),
+        (
+            "Flows with a given tag",
+            f"SELECT name, created FROM {Q}.flows WHERE list_contains(tags, 'etl') ORDER BY name",
+        ),
         (
             "Flow-run outcomes per flow",
             f"SELECT f.name, r.state_type, count(*) AS runs FROM {Q}.flows f JOIN {Q}.flow_runs r ON r.flow_id = f.id "
@@ -120,7 +123,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "task_run_logs": [
         (
             "Why each failed task run failed",
-            f"SELECT t.name, l.timestamp, l.message FROM {Q}.task_runs t JOIN {Q}.task_run_logs l ON l.task_run_id = t.id "
+            f"SELECT t.name, l.timestamp, l.message FROM {Q}.task_runs t "
+            f"JOIN {Q}.task_run_logs l ON l.task_run_id = t.id "
             "WHERE l.level >= 40 ORDER BY l.timestamp",
         ),
     ],
@@ -143,7 +147,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "concurrency_limits": [
         (
             "Concurrency limits and their slot usage",
-            f"SELECT name, kind, \"limit\", active_slots FROM {Q}.concurrency_limits ORDER BY name",
+            f'SELECT name, kind, "limit", active_slots FROM {Q}.concurrency_limits ORDER BY name',
         ),
     ],
     "automations": [
@@ -157,7 +161,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         (
             "Flow-run state changes in a window (occurred and the prefix reach the API)",
             f"SELECT event, count(*) AS n FROM {Q}.events WHERE starts_with(event, 'prefect.flow-run.') "
-            "AND occurred >= TIMESTAMPTZ '2026-11-15' AND occurred < TIMESTAMPTZ '2026-11-16' GROUP BY event ORDER BY n DESC",
+            "AND occurred >= TIMESTAMPTZ '2026-11-15' AND occurred < TIMESTAMPTZ '2026-11-16' "
+            "GROUP BY event ORDER BY n DESC",
         ),
     ],
     "artifacts": [
@@ -167,7 +172,10 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ),
     ],
     "block_types": [
-        ("Block types by slug", f"SELECT slug, name FROM {Q}.block_types WHERE NOT is_protected ORDER BY slug LIMIT 20"),
+        (
+            "Block types by slug",
+            f"SELECT slug, name FROM {Q}.block_types WHERE NOT is_protected ORDER BY slug LIMIT 20",
+        ),
     ],
     "block_documents": [
         (
@@ -177,7 +185,10 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ),
     ],
     "variables": [
-        ("Variable names, types and tags (values masked)", f"SELECT name, value_type, tags FROM {Q}.variables ORDER BY name"),
+        (
+            "Variable names, types and tags (values masked)",
+            f"SELECT name, value_type, tags FROM {Q}.variables ORDER BY name",
+        ),
     ],
     "runs": [
         ("Runs per status", f"SELECT status, count(*) AS runs FROM {U}.runs GROUP BY status ORDER BY status"),
@@ -386,13 +397,15 @@ class PrefectWorker(Worker):
         schemas=[
             Schema(
                 path=["main"],
-                comment="Prefect REST resources as tables: flows, deployments, runs, logs, work pools, events and config.",
+                comment="Prefect REST resources as tables: flows, deployments, runs, logs, work pools, events, config.",
                 tables=MAIN_TABLES,
                 functions=FUNCTIONS,
                 tags={
                     "vgi.title": "Prefect Resources",
                     "domain": "orchestration",
-                    "vgi.keywords": keywords_array("flows, flow runs, task runs, deployments, logs, work pools, events"),
+                    "vgi.keywords": keywords_array(
+                        "flows, flow runs, task runs, deployments, logs, work pools, events"
+                    ),
                     "vgi.doc_llm": MAIN_DOC_LLM,
                     "vgi.doc_md": MAIN_DOC_MD,
                     "vgi.categories": json.dumps(MAIN_CATEGORIES),

@@ -35,7 +35,11 @@ MAIN_CATEGORIES = [
     },
 ]
 UNIFIED_CATEGORIES = [
-    {"name": "unified_runs", "title": "Cross-orchestrator runs", "description": "Runs and task runs in a shared shape."},
+    {
+        "name": "unified_runs",
+        "title": "Cross-orchestrator runs",
+        "description": "Runs and task runs in a shared shape.",
+    },
 ]
 _ALL_CATEGORIES = {c["name"] for c in MAIN_CATEGORIES + UNIFIED_CATEGORIES}
 
@@ -380,7 +384,9 @@ AGENT_TEST_TASKS = [
     },
     {
         "name": "scheduled_runs",
-        "prompt": "Using the prefect catalog, how many flow runs of the 'nightly' deployment are scheduled and waiting?",
+        "prompt": (
+            "Using the prefect catalog, how many flow runs of the 'nightly' deployment are scheduled and waiting?"
+        ),
     },
     {
         "name": "artifact_keys",

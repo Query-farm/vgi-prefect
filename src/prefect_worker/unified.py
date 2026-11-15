@@ -114,7 +114,7 @@ def _duration(item: dict[str, Any]) -> float | None:
 
 
 def task_name(task_run: dict[str, Any]) -> str:
-    """The task's name: the run name without the ``-<3 chars of dynamic_key>`` suffix Prefect appends."""
+    """Return the task's name: the run name without the ``-<3 chars of dynamic_key>`` suffix Prefect appends."""
     name = str(task_run.get("name") or "")
     suffix = "-" + str(task_run.get("dynamic_key") or "")[:3]
     return name.removesuffix(suffix) if len(suffix) > 1 and name.endswith(suffix) else name

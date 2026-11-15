@@ -43,7 +43,9 @@ def load(rows: list[int]) -> int:
 def etl_orders(n: int = 5) -> int:
     rows = transform(extract(n))
     total = load(rows)
-    create_markdown_artifact(key="orders-report", markdown=f"# Orders\n\nLoaded **{total}** rows.", description="Run report")
+    create_markdown_artifact(
+        key="orders-report", markdown=f"# Orders\n\nLoaded **{total}** rows.", description="Run report"
+    )
     print(f"done: {total}")
     return total
 
