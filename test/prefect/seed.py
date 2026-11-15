@@ -5,7 +5,7 @@ Run inside a throwaway venv with ``prefect`` installed and ``PREFECT_API_URL``
 
     python test/prefect/seed.py configure   # pools, deployment, variables, blocks, limits, automation
     python test/prefect/seed.py run         # run the fixture flows
-    prefect worker start --pool local-pool --run-once   # execute the deployment's run
+    prefect worker start --pool local-pool --name fixture-worker --run-once   # execute the deployment run
     python test/prefect/seed.py cancel      # one more deployment run, cancelled
 
 Values planted here are fixture-only; none is a real credential.

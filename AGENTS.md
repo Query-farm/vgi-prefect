@@ -22,14 +22,20 @@ Faster loops while iterating: `make test-unit`, `make test-sql`, `make lint-expl
 
 ```
 src/prefect_worker/
-  worker.py        # assembles the catalog; add new functions to FUNCTIONS
-  meta.py          # catalog/schema metadata + helpers (object_tags, column)
-  greet.py         # scalar example (overloads, ConstParam choices)
-  sequence.py      # table function example (named args, streaming state)
-  fetch_items.py   # REST API table function (pagination, retries, secrets)
-tests/             # pytest unit tests (in-process client)
+  worker.py        # assembles the catalog: tables, constraints, examples
+  meta.py          # catalog/schema/table metadata + helpers (object_tags, column)
+  client.py        # Prefect REST client: `prefect` secret, auth, retries
+  scan.py          # ApiScan base: pushdown helpers, filter bodies, paging cursor
+  tables.py        # main.* tables (flows, flow_runs, task_runs, logs, events, ...)
+  unified.py       # unified.runs / unified.task_runs + status mapping
+  functions.py     # variable_values(reveal := false)
+  status.py        # unified_status(state_type) scalar
+  masking.py       # variable value masking
+tests/             # pytest unit tests (client, pushdown translation, masking, mapping)
 test/sql/          # sqllogictest files run through DuckDB
-test/mock_api/     # offline mock of the REST API used by tests
+test/mock_api/     # replay of the recorded Prefect 3 API (validates filter bodies)
+test/prefect/      # fixture flows, seed.py, record.py, run-live.sh
+test/fixtures/     # prefect3.json: recorded objects + filter-body grammar
 examples/          # recipes: pushdown, caching, catalog tables, aggregates, COPY …
 ci/                # integration harness used by `make test-sql` and CI
 scripts/           # vgi_template.py (init / template-diff)
@@ -38,8 +44,9 @@ vgi-agent-tests.yaml  # private graders for the agent test tasks
 
 ## Recipe: add a function
 
-1. Create `src/prefect_worker/<name>.py`. Copy the closest example: `greet.py` for a
-   scalar, `sequence.py` for a generator, `fetch_items.py` for an API.
+1. Create `src/prefect_worker/<name>.py`. Copy the closest example: `status.py` for a
+   scalar, `functions.py` for a table function with arguments, a class in `tables.py`
+   for a new API-backed table.
 2. Declare arguments with `Annotated[..., Param(...)]`/`ConstParam(...)` (scalars) or a
    frozen dataclass of `Annotated[..., Arg(...)]` (table functions). Use `Arg(0, ...)`
    for positional arguments and `Arg("name", default=...)` for named ones.
@@ -130,8 +137,8 @@ in the vgi-python docs.
 - **State must be serializable.** Table-function state (`initial_state`/`process`) must subclass `ArrowSerializableDataclass`. Over HTTP each batch can be served by a different process, so the cursor travels with the request. Keep it small, and never put secrets in it.
 - **Examples must be deterministic.** Add `ORDER BY`, and no `now()`, random values or
   network. Examples that hit a live API go in `examples`, not `executable_examples`.
-- **Credentials.** Read them from a DuckDB secret first (`CREATE SECRET (TYPE prefect_api, …)`),
-  then from an environment variable. Never put them in logs, examples or the repo, and
+- **Credentials.** Read them from a DuckDB secret first (`CREATE SECRET (TYPE prefect, …)`),
+  never from environment variables. Never put them in logs, examples or the repo, and
   keep them out of table-function state unless the state rule above says
   the SDK encrypts it. Workers that need real credentials set `execute: false` on the metadata check.
 - **Errors.** Raise errors with a clear message. For HTTP failures, include the status
@@ -160,7 +167,7 @@ in the vgi-python docs.
 ## Useful prompts
 
 - "Add a scalar `slugify(text VARCHAR) -> VARCHAR` with full metadata and tests."
-- "Replace `fetch_items` with a table function for <API>. Map its JSON to typed columns,
-  read the token from a `prefect_api` secret, and add mock-server tests."
+- "Add a table for Prefect's `/saved_searches/filter` endpoint following `tables.py`,
+  re-record the fixture with test/prefect/record.py, and add SQL tests."
 - "Add a catalog table `countries` (code, name) with a primary key, following
   `examples/catalog_tables`."

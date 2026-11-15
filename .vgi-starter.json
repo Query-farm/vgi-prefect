@@ -14,6 +14,6 @@
     ".github/dependabot.yml"
   ],
   "name": "prefect",
-  "repo": "your-org/vgi-prefect",
+  "repo": "Query-farm/vgi-prefect",
   "initialized": "2026-11-15"
 }

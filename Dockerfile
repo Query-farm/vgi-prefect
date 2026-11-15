@@ -7,8 +7,8 @@ FROM python:3.13-slim
 ARG VERSION=0.0.0
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.title="vgi-prefect-worker" \
-      org.opencontainers.image.description="A VGI worker for DuckDB" \
-      org.opencontainers.image.source="https://github.com/your-org/vgi-prefect" \
+      org.opencontainers.image.description="Prefect 3 flows, runs, logs and deployments as SQL tables for DuckDB (VGI worker)" \
+      org.opencontainers.image.source="https://github.com/Query-farm/vgi-prefect" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.licenses="0BSD"

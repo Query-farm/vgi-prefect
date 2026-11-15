@@ -96,8 +96,11 @@ jobs:
           location: ${{ github.workspace }}/.venv/bin/vgi-prefect-worker
           # Set in vgi-lint.toml, so local runs and CI agree.
           fail-on: ${{ steps.lintcfg.outputs.fail_on }}
-          # Set to false if your examples need real credentials or network access.
-          execute: true
+          # Credential-gated: every table in prefect.main / prefect.unified (flows, flow_runs,
+          # task_runs, logs, deployments, events, ..., unified.runs) and variable_values() need a
+          # `prefect` secret (API_URL + API_KEY for Prefect Cloud, or a server URL) for a live API.
+          # The SQL suite covers them against the recorded replay in test/mock_api instead.
+          execute: "false"
 
   docker:
     name: Docker image smoke test
