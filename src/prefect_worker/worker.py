@@ -404,7 +404,9 @@ class PrefectWorker(Worker):
         schemas=[
             Schema(
                 path=["main"],
-                comment="Prefect REST resources as tables: flows, deployments, runs, logs, work pools, events, config.",
+                comment=(
+                    "Prefect's native REST collections as tables, with pushdown of ids, states, tags and time ranges."
+                ),
                 tables=MAIN_TABLES,
                 functions=FUNCTIONS,
                 tags={

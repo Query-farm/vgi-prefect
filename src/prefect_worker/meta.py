@@ -80,52 +80,54 @@ CREDENTIALS_MD = (
 )
 
 CATALOG_DESCRIPTION = (
-    "Prefect 3's REST API (Prefect Cloud or a self-hosted server) as SQL tables: flows, deployments and "
-    "schedules, flow runs, task runs, run logs, work pools, queues and workers, concurrency limits, "
-    "automations, events, artifacts, blocks and variables, plus cross-orchestrator unified runs."
+    "Prefect 3's REST API, from Prefect Cloud or a self-hosted server, as read-only SQL tables for "
+    "auditing flows, runs, logs, infrastructure and events, plus cross-orchestrator unified runs."
 )
 
 CATALOG_DOC_LLM = (
-    "Query one Prefect 3 workspace (Prefect Cloud) or self-hosted Prefect server through its REST API. Requires a "
-    "DuckDB secret created after ATTACH: CREATE SECRET (TYPE prefect, API_URL '<PREFECT_API_URL>', API_KEY '...') "
-    "for Cloud, or (TYPE prefect, API_URL 'http://host:4200/api' [, AUTH_STRING 'user:pass']) for a server. "
-    "Schema `main`: flows, deployments, deployment_schedules, flow_runs, task_runs, flow_run_logs (lines logged by "
-    "the flow itself), task_run_logs (lines logged inside tasks), work_pools, work_queues, workers, "
-    "concurrency_limits, automations, events, artifacts, block_types, block_documents (names only, never values), "
-    "variables (values always masked) and the table function variable_values(reveal := false). Schema `unified`: "
-    "runs and task_runs in the shape shared with the Airflow, Dagster and other orchestrator workers. Filters on "
-    "ids, names, state_type/state_name, tags (list_contains(tags, 'x')), deployment, work pool, timestamp ranges, "
-    "log level and event name/resource are translated into Prefect's JSON filter bodies; always filter by flow "
-    "and a time range on large workspaces. Timestamps are `TIMESTAMPTZ` in UTC."
+    "Read-only SQL access to one Prefect 3 workspace (Prefect Cloud) or self-hosted Prefect server through its "
+    "REST API. Reach for it to answer operational questions about a Prefect deployment: which runs failed and "
+    "why, what is scheduled or late, what a run logged, which infrastructure picks up work, and what the event "
+    "feed recorded. Requires a DuckDB secret created after ATTACH: CREATE SECRET (TYPE prefect, API_URL "
+    "'<PREFECT_API_URL>', API_KEY '...') for Cloud, or (TYPE prefect, API_URL 'http://host:4200/api' "
+    "[, AUTH_STRING 'user:pass']) for a server. Schema `main` mirrors Prefect's native REST collections; schema "
+    "`unified` reshapes runs into the columns shared with the Airflow, Dagster and other orchestrator workers so "
+    "they can be combined with UNION ALL. Predicates on ids, names, states, tags (list_contains(tags, 'x')), "
+    "deployments, work pools, time ranges, log levels and event names are translated into Prefect's JSON "
+    "filter bodies, so always filter by flow and a time range on large workspaces. Secrets stay in Prefect: "
+    "variable values are masked and block contents are never read. Timestamps are `TIMESTAMPTZ` in UTC."
 )
 
 CATALOG_DOC_MD = (
     "# Prefect\n\n"
-    "Query a Prefect 3 workspace's flows, deployments, runs, logs, work pools, automations, events and "
-    "artifacts with SQL. Works with Prefect Cloud and self-hosted Prefect servers.\n\n"
+    "Audit a Prefect 3 workspace with SQL: failed and late runs, what they logged, which work pools and "
+    "workers pick them up, and what the event feed recorded. Works with Prefect Cloud and self-hosted Prefect "
+    "servers, and is read-only.\n\n"
     f"{CREDENTIALS_MD}\n\n"
     "Filters on names, ids, states, tags and time ranges become Prefect's own `POST /…/filter` bodies, so a "
-    "query for one flow's failed runs last week reads only those runs."
+    "query for one flow's failed runs last week reads only those runs. The `unified` schema lines Prefect up "
+    "with the other Query.Farm orchestrator workers for cross-tool reporting."
 )
 
 MAIN_DOC_LLM = (
-    "Native Prefect resources, one table per REST collection. Join keys: flows.id = flow_runs.flow_id = "
-    "deployments.flow_id; flow_runs.id = task_runs.flow_run_id = flow_run_logs.flow_run_id = "
-    "task_run_logs.flow_run_id = artifacts.flow_run_id; task_runs.id = task_run_logs.task_run_id; "
-    "deployments.id = flow_runs.deployment_id = deployment_schedules.deployment_id. state_type is Prefect's "
-    "upper-case StateType (SCHEDULED, PENDING, RUNNING, PAUSED, CANCELLING, COMPLETED, FAILED, CRASHED, "
-    "CANCELLED); state_name is the display name (Late, AwaitingRetry, Retrying, Cached, ...). Pushed down to the "
-    "API: id/name/flow_id/flow_name/deployment_id/deployment_name/work_pool_name/work_queue_name (= or IN), "
-    "state_type and state_name (= or IN), list_contains(tags, 'x'), start_time/end_time/expected_start_time "
-    "ranges, log level/level_name and timestamp ranges, event name, resource_id and occurred ranges."
+    "Prefect's native resources, one table per REST collection, with Prefect's own ids and column names so "
+    "results line up with the Prefect UI and API. Resources form a hierarchy: a flow has deployments (with "
+    "schedules) and flow runs, a flow run has task runs, and both levels emit log lines and artifacts; work "
+    "pools own queues and workers. Each table's description lists its join keys and the predicates it pushes "
+    "down. state_type is Prefect's upper-case StateType and state_name its display name (Late, AwaitingRetry, "
+    "...). Pushdown covers equality and IN on ids and names, state filters, list_contains(tags, 'x') and "
+    "timestamp ranges; anything else is filtered locally after the API returns, so narrow by flow, state and "
+    "time first. Configuration objects are exposed without their secrets: variable values are masked unless a "
+    "non-secret value is explicitly revealed, and block documents carry names and types only."
 )
 
 MAIN_DOC_MD = (
     "## main\n\n"
-    "Prefect's REST resources as tables. A flow has deployments and flow runs, a flow run has task runs, "
-    "and both emit logs and artifacts.\n\n"
+    "Prefect's REST resources as tables, in Prefect's own vocabulary. A flow has deployments and flow runs, "
+    "a flow run has task runs, and both emit logs and artifacts.\n\n"
     "Filter by flow, state and a time range wherever you can: those predicates become Prefect filter bodies, "
-    "so the worker reads only the matching runs instead of the whole history.\n\n"
+    "so the worker reads only the matching runs instead of the whole history. Each table's own description "
+    "lists its join keys and pushed-down columns.\n\n"
     "Secrets stay in Prefect. Variable values are masked unless you ask for non-secret ones, and block "
     "documents are listed by name and type only."
 )
