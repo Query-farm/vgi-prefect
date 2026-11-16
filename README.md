@@ -37,7 +37,7 @@ INSTALL vgi FROM query_farm;
 LOAD vgi FROM query_farm;
 
 ATTACH 'prefect' (TYPE vgi,
-  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-prefect@v0.1.0 vgi-prefect-worker');
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-prefect@v0.1.1 vgi-prefect-worker');
 
 -- Credentials go in a DuckDB secret. Create it after ATTACH, which registers the secret type.
 CREATE SECRET pf (TYPE prefect,
