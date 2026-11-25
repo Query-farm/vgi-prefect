@@ -26,6 +26,8 @@ GROUP BY flow_name ORDER BY failures DESC;
 The state filter and the time range are sent to Prefect inside the `POST /flow_runs/filter`
 body, so the worker fetches only the failed November runs.
 
+vgi-prefect 0.2.0 speaks VGI protocol 3.4, so it needs Haybarn 2.0.1 or newer (Haybarn 2.0.0 loads a 3.3 `vgi` extension that cannot attach it).
+
 ## Quick start
 
 **DuckDB 2.0:**
@@ -37,7 +39,7 @@ INSTALL vgi FROM query_farm;
 LOAD vgi FROM query_farm;
 
 ATTACH 'prefect' (TYPE vgi,
-  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-prefect@v0.1.1 vgi-prefect-worker');
+  LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-prefect@v0.2.0 vgi-prefect-worker');
 
 -- Credentials go in a DuckDB secret. Create it after ATTACH, which registers the secret type.
 CREATE SECRET pf (TYPE prefect,
